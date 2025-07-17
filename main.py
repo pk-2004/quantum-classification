@@ -58,36 +58,58 @@ def load_api_key():
         return None
 
 # Choose target device - options: "local", "simulator", "qpu.aria-1", "qpu.aria-2", "qpu.forte-1"
-TARGET_DEVICE = "qpu.aria-1"  # Change this to "simulator" for IonQ or "qpu.aria-1" for actual hardware
+TARGET_DEVICE = "aria-1"  # Change this to "simulator" for IonQ or "qpu.aria-1" for actual hardware
 
 # Create PennyLane devices
 dev_local = qml.device('default.qubit', wires=n_qubit)
 
 # Create IonQ device if API key is available
 def create_ionq_device():
-    if TARGET_DEVICE == "local":
-        # No need to create IonQ device for local simulation
-        return None
-    
     api_key = load_api_key()
-    if api_key:
-        try:
-            if TARGET_DEVICE == "simulator":
-                # Use ionq.simulator device for ideal simulation
-                return qml.device('ionq.simulator', wires=n_qubit, api_key=api_key, shots=1024)
-            elif TARGET_DEVICE.startswith("qpu."):
-                # Use ionq.qpu device for hardware (remove target parameter)
-                return qml.device('ionq.qpu', wires=n_qubit, api_key=api_key, shots=1024)
-            else:
-                print(f"Unknown TARGET_DEVICE: {TARGET_DEVICE}. Using local simulation.")
-                return None
-        except Exception as e:
-            print(f"Failed to create IonQ device: {e}")
-            print("Falling back to local simulation.")
-            return None
-    else:
+    if not api_key:
         print("API key not found. Using local simulation.")
         return None
+
+    if TARGET_DEVICE == "local":
+        return None
+
+    try:
+        if TARGET_DEVICE == "simulator":
+            return qml.device('ionq.simulator', wires=n_qubit, api_key=api_key, shots=1024)
+        elif TARGET_DEVICE in ["aria-1", "aria-2", "forte-1"]:
+            return qml.device('ionq.qpu', wires=n_qubit, api_key=api_key, backend=TARGET_DEVICE, shots=1024)
+        else:
+            print(f"Unknown TARGET_DEVICE '{TARGET_DEVICE}', defaulting to local simulator.")
+            return None
+    except Exception as e:
+        print(f"Failed to create IonQ device: {e}")
+        print("Falling back to local simulation.")
+        return None
+
+# def create_ionq_device():
+#     if TARGET_DEVICE == "local":
+#         # No need to create IonQ device for local simulation
+#         return None
+    
+#     api_key = load_api_key()
+#     if api_key:
+#         try:
+#             if TARGET_DEVICE == "simulator":
+#                 # Use ionq.simulator device for ideal simulation
+#                 return qml.device('ionq.simulator', wires=n_qubit, api_key=api_key, shots=1024)
+#             elif TARGET_DEVICE.startswith("qpu."):
+#                 # Use ionq.qpu device for hardware (remove target parameter)
+#                 return qml.device('ionq.qpu', wires=n_qubit, api_key=api_key, shots=1024)
+#             else:
+#                 print(f"Unknown TARGET_DEVICE: {TARGET_DEVICE}. Using local simulation.")
+#                 return None
+#         except Exception as e:
+#             print(f"Failed to create IonQ device: {e}")
+#             print("Falling back to local simulation.")
+#             return None
+#     else:
+#         print("API key not found. Using local simulation.")
+#         return None
 
 dev_ionq = create_ionq_device()
 
@@ -299,7 +321,7 @@ X_train, X_test, y_train, y_test = load_mnist(n_qubit)
 
 # Use reduced sample for practical testing
 svm = SVC(kernel='precomputed')
-n_sample_max = 5  # Reduced to 2 for very fast testing (~10 calculations total)
+n_sample_max = 20  # Reduced to 2 for very fast testing (~10 calculations total)
 X_train_sample = []
 y_train_sample = []
 for label in np.unique(y_train):
@@ -317,11 +339,17 @@ kernel_mat_train = kernel_mat(X_train_sample, X_train_sample, "Training kernel m
 print(f"\n=== TEST PHASE ===")
 print(f"Test samples shape: {X_test.shape}")
 # Use only first 3 test samples for very fast testing
-X_test_small = X_test[:3]
-y_test_small = y_test[:3]
-print(f"Using smaller test set: {X_test_small.shape}")
-print(f"Computing test kernel matrix ({len(X_test_small)}x{len(X_train_sample)})")
-kernel_mat_test = kernel_mat(X_test_small, X_train_sample, "Test kernel matrix")
+
+# n_test_samples = 30
+# X_test_small = X_test[:n_test_samples]
+# y_test_small = y_test[:n_test_samples]
+# print(f"Using smaller test set: {X_test_small.shape}")
+# print(f"Computing test kernel matrix ({len(X_test_small)}x{len(X_train_sample)})")
+# kernel_mat_test = kernel_mat(X_test_small, X_train_sample, "Test kernel matrix")
+
+print(f"Using test set: {X_test.shape}")
+print(f"Computing test kernel matrix ({len(X_test)}x{len(X_train)})")
+kernel_mat_test = kernel_mat(X_test, X_train_sample, "Test kernel matrix")
 
 print('reached here')
 
@@ -347,7 +375,7 @@ for iteration, n_sample in enumerate(range(2, n_sample_max+1, 1), 1):  # Test wi
     pred = svm.predict(np.concatenate([kernel_mat_test[:, :n_sample], kernel_mat_test[:, n_sample_max:n_sample_max+n_sample]], axis=1))
     
     # Calculate accuracy
-    acc = accuracy_score(y_test_small, pred)
+    acc = accuracy_score(y_test, pred)
     accuracy.append(acc)
     n_samples.append(n_sample)
     print(f"✓ Accuracy: {acc:.4f}")
