@@ -58,10 +58,10 @@ def load_api_key():
         return None
 
 # Choose target device - options: "local", "simulator", "qpu.aria-1", "qpu.aria-2", "qpu.forte-1"
-TARGET_DEVICE = "aria-1"  # Change this to "simulator" for IonQ or "qpu.aria-1" for actual hardware
+TARGET_DEVICE = "local"  # Change this to "simulator" for IonQ or "aria-1" for actual hardware
 
 # Create PennyLane devices
-dev_local = qml.device('default.qubit', wires=n_qubit)
+dev_local = qml.device('lightning.qubit', wires=n_qubit, shots = None)
 
 # Create IonQ device if API key is available
 def create_ionq_device():
@@ -321,15 +321,17 @@ X_train, X_test, y_train, y_test = load_mnist(n_qubit)
 
 # Use reduced sample for practical testing
 svm = SVC(kernel='precomputed')
-n_sample_max = 20  # Reduced to 2 for very fast testing (~10 calculations total)
-X_train_sample = []
-y_train_sample = []
-for label in np.unique(y_train):
-    index = y_train == label
-    X_train_sample.append(X_train[index][:n_sample_max])
-    y_train_sample.append(y_train[index][:n_sample_max])
-X_train_sample = np.concatenate(X_train_sample, axis=0)
-y_train_sample = np.concatenate(y_train_sample, axis=0)
+# n_sample_max = 20  # Reduced to 2 for very fast testing (~10 calculations total)
+# X_train_sample = []
+# y_train_sample = []
+# for label in np.unique(y_train):
+#     index = y_train == label
+#     X_train_sample.append(X_train[index][:n_sample_max])
+#     y_train_sample.append(y_train[index][:n_sample_max])
+# X_train_sample = np.concatenate(X_train_sample, axis=0)
+# y_train_sample = np.concatenate(y_train_sample, axis=0)
+X_train_sample = X_train
+y_train_sample = y_train
 
 print(f"\n=== TRAINING PHASE ===")
 print(f"Training samples shape: {X_train_sample.shape}")
@@ -340,57 +342,77 @@ print(f"\n=== TEST PHASE ===")
 print(f"Test samples shape: {X_test.shape}")
 # Use only first 3 test samples for very fast testing
 
-# n_test_samples = 30
+# n_test_samples = 20
 # X_test_small = X_test[:n_test_samples]
 # y_test_small = y_test[:n_test_samples]
 # print(f"Using smaller test set: {X_test_small.shape}")
 # print(f"Computing test kernel matrix ({len(X_test_small)}x{len(X_train_sample)})")
 # kernel_mat_test = kernel_mat(X_test_small, X_train_sample, "Test kernel matrix")
+X_test_small = X_test
+y_test_small = y_test
 
-print(f"Using test set: {X_test.shape}")
-print(f"Computing test kernel matrix ({len(X_test)}x{len(X_train)})")
-kernel_mat_test = kernel_mat(X_test, X_train_sample, "Test kernel matrix")
+print(f"Using small test set: {X_test_small.shape}")
+print(f"Computing test kernel matrix ({len(X_test_small )}x{len(X_train)})")
+kernel_mat_test = kernel_mat(X_test_small, X_train_sample, "Test kernel matrix")
 
 print('reached here')
 
 print(f"\n=== ACCURACY EVALUATION ===")
-accuracy = []
-n_samples = []
-total_iterations = len(range(2, n_sample_max+1, 1))
+# Compute kernel matrices using full training set
+kernel_mat_train = kernel(X_train, X_train)
+kernel_mat_test = kernel(X_test_small, X_train)
 
-for iteration, n_sample in enumerate(range(2, n_sample_max+1, 1), 1):  # Test with 2,3,4,5 samples
-    print(f'\n--- Iteration {iteration}/{total_iterations}: {n_sample} samples per class ---')
+# Train SVM
+svm = SVC(kernel="precomputed")
+svm.fit(kernel_mat_train, y_train)
+
+# Predict
+pred = svm.predict(kernel_mat_test)
+acc = accuracy_score(y_test_small, pred)
+
+print(f"✓ Accuracy on full dataset: {acc:.4f}")
+
+# accuracy = []
+# n_samples = []
+# total_iterations = len(range(2, n_sample_max+1, 1))
+
+# for iteration, n_sample in enumerate(range(2, n_sample_max+1, 1), 1):  # Test with 2,3,4,5 samples
+#     print(f'\n--- Iteration {iteration}/{total_iterations}: {n_sample} samples per class ---')
     
-    class1_indices = np.arange(n_sample)
-    class2_indices = np.arange(n_sample_max, n_sample_max+n_sample)
-    selected_indices = np.concatenate([class1_indices, class2_indices])
+#     class1_indices = np.arange(n_sample)
+#     class2_indices = np.arange(n_sample_max, n_sample_max+n_sample)
+#     selected_indices = np.concatenate([class1_indices, class2_indices])
 
-    # Train SVM
-    print("Training SVM...")
-    svm.fit(kernel_mat_train[np.ix_(selected_indices, selected_indices)], 
-            np.concatenate([y_train_sample[:n_sample], y_train_sample[n_sample_max:n_sample_max+n_sample]]))
+#     # Train SVM
+#     print("Training SVM...")
+#     svm.fit(kernel_mat_train[np.ix_(selected_indices, selected_indices)], 
+#             np.concatenate([y_train_sample[:n_sample], y_train_sample[n_sample_max:n_sample_max+n_sample]]))
     
-    # Make predictions
-    print("Making predictions...")
-    pred = svm.predict(np.concatenate([kernel_mat_test[:, :n_sample], kernel_mat_test[:, n_sample_max:n_sample_max+n_sample]], axis=1))
+#     # Make predictions
+#     print("Making predictions...")
+#     pred = svm.predict(np.concatenate([kernel_mat_test[:, :n_sample], kernel_mat_test[:, n_sample_max:n_sample_max+n_sample]], axis=1))
     
-    # Calculate accuracy
-    acc = accuracy_score(y_test, pred)
-    accuracy.append(acc)
-    n_samples.append(n_sample)
-    print(f"✓ Accuracy: {acc:.4f}")
+#     # Calculate accuracy
+#     acc = accuracy_score(y_test_small, pred)
+#     accuracy.append(acc)
+#     n_samples.append(n_sample)
+#     print(f"✓ Accuracy: {acc:.4f}")
 
-print(f"\n=== FINAL RESULTS ===")
-for i, (n_samp, acc) in enumerate(zip(n_samples, accuracy)):
-    print(f"Samples per class: {n_samp} | Accuracy: {acc:.4f}")
+# print(f"\n=== FINAL RESULTS ===")
+# for i, (n_samp, acc) in enumerate(zip(n_samples, accuracy)):
+#     print(f"Samples per class: {n_samp} | Accuracy: {acc:.4f}")
 
-print(f"\n=== PLOTTING RESULTS ===")
+# print(f"\n=== PLOTTING RESULTS ===")
 
-plt.plot(n_samples, accuracy, marker='o')
-plt.title('Classification Accuracy vs. #Training Samples')
-plt.xlabel('#Training Samples')
-plt.xticks(n_samples, n_samples)
-plt.ylabel('Accuracy')
-plt.grid()
-plt.tight_layout()
-plt.show()
+# plt.plot(n_samples, accuracy, marker='o')
+# plt.title('Classification Accuracy vs. #Training Samples')
+# plt.xlabel('#Training Samples')
+# plt.xticks(n_samples, n_samples)
+# plt.ylabel('Accuracy')
+# plt.grid()
+# plt.tight_layout()
+# plt.show()
+print("\n=== FINAL RESULTS ===")
+print(f"Training samples: {len(X_train)}")
+print(f"Test samples: {len(X_test_small)}")
+print(f"Accuracy: {acc:.4f}")
